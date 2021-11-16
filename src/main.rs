@@ -1,26 +1,48 @@
 mod config;
 
+use colored::Colorize;
 use config::{Contestant, Problem};
-use std::{
-    fs::{read_dir, File},
-    io::stdin,
-};
+use std::fs::{read_dir, File};
+use std::io::Read;
+use std::path::Path;
 
 fn quit(reason: &str, code: i32) -> ! {
     eprintln!("{}", reason);
-    eprintln!("Press Enter to quit...");
+    eprintln!("按下 Enter 键退出...");
     std::io::stdin().read_line(&mut String::new()).unwrap();
     std::process::exit(code)
 }
 
+fn try_crc32<P: AsRef<Path>>(path: P) -> Result<String, String> {
+    let mut f = File::open(path).map_err(|e| format!("无法读取文件内容:{}", e))?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf)
+        .map_err(|e| format!("无法读取文件内容:{}", e))?;
+    let mut hasher = crc32fast::Hasher::new();
+    hasher.update(&buf);
+    Ok(format!("{:#08X}", hasher.finalize()))
+}
+
+/// This function is used just as its name tells. See Rust [`Result::into_ok_or_err`].
+fn result_into_ok_or_err<T>(r: Result<T, T>) -> T {
+    match r {
+        Ok(v) => v,
+        Err(v) => v,
+    }
+}
+
 fn main() {
-    let cfg_file = File::open("checker.cfg");
+    let cfg_file = if let Some(d) = std::env::args().nth(1) {
+        File::open(Path::new(&d).join("checker.cfg.json"))
+    } else {
+        File::open("checker.cfg.json")
+    };
     if cfg_file.is_err() {
-        quit("Errcode 1, checker.cfg not found", 1);
+        quit("错误 1, checker.cfg.json 不存在, 请联系监考员.", 1);
     }
     let cfg = serde_json::from_reader(cfg_file.unwrap());
     if cfg.is_err() {
-        quit("Errcode 2, checker.cfg unparsable", 2);
+        quit("错误 2, checker.cfg.json 无法解析, 请联系监考员.", 2);
     }
     let mut cfg: Contestant = cfg.unwrap();
 
@@ -36,18 +58,15 @@ fn main() {
     }
 
     if valid_folders.is_empty() {
-        quit(
-            "Errcode 3, No valid personal directory found. Please read contestant notification",
-            3,
-        );
+        quit("错误 3, 没有找到有效的选手目录. 请阅读考生须知.", 3);
     }
 
     if valid_folders.len() > 1 {
-        eprintln!("Multiple directories found: ");
+        eprintln!("找到多个选手目录: ");
         for valid_folder in valid_folders.iter() {
             eprintln!("    {:?}", valid_folder);
         }
-        quit("Errcode 4, found multiple personal directories.", 4);
+        quit("错误 4, 找到多个选手目录.", 4);
     }
 
     let valid_folder_name = valid_folders.into_iter().next().unwrap();
@@ -79,13 +98,20 @@ fn main() {
     }
 
     for prob in cfg.problems.iter() {
-        println!("Problem {}:", prob.name);
+        print!("题目 {}: ", prob.name);
         if prob.existing_files.is_empty() {
-            println!("No source files found.");
+            println!("未找到源代码文件.");
         } else if prob.existing_files.len() == 1 {
-            println!("Found: {}", prob.existing_files[0]);
+            let f = Path::new(&prob.existing_files[0])
+                .strip_prefix(&user_directory)
+                .unwrap();
+            println!(
+                "找到文件 {} => 校验码 {}",
+                f.display(),
+                result_into_ok_or_err(try_crc32(&prob.existing_files[0]))
+            );
         } else {
-            println!("Multiple source files found:");
+            println!("找到多个源代码文件:");
             for file in prob.existing_files.iter() {
                 println!("    {}", file);
             }
