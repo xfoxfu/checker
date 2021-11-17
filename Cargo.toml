@@ -10,7 +10,6 @@ rustflags = ["-C", "target-feature=+crt-static"]
 
 [dependencies]
 colored = "2.0.0"
-crc32fast = "1.2.1"
 csv = "1.1.6"
 md5 = "0.7.0"
 regex = "1.4.3"

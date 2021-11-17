@@ -17,12 +17,10 @@ fn quit(reason: &str, code: i32) -> ! {
 
 fn try_crc32<P: AsRef<Path>>(path: P) -> Result<String, String> {
     let mut f = File::open(path).map_err(|e| format!("无法读取文件内容:{}", e))?;
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf)
+    let mut s = String::new();
+    f.read_to_string(&mut s)
         .map_err(|e| format!("无法读取文件内容:{}", e))?;
-    let mut hasher = crc32fast::Hasher::new();
-    hasher.update(&buf);
-    Ok(format!("{:#08X}", hasher.finalize()))
+    Ok(format!("{:x}", md5::compute(&s)))
 }
 
 /// This function is used just as its name tells. See Rust [`Result::into_ok_or_err`].

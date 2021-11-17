@@ -38,6 +38,8 @@ mod regex_sd {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
+        #[cfg(unix)]
+        let s = s.replace(r#"\\"#, "/");
         Regex::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
