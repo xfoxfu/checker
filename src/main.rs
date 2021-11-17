@@ -2,9 +2,11 @@ mod config;
 
 use colored::Colorize;
 use config::{Contestant, Problem};
+use std::fmt::format;
 use std::fs::{read_dir, File};
 use std::io::Read;
 use std::path::Path;
+use std::result;
 
 fn quit(reason: &str, code: i32) -> ! {
     eprintln!("{}", reason);
@@ -106,7 +108,7 @@ fn main() {
                 .strip_prefix(&user_directory)
                 .unwrap();
             println!(
-                "找到文件 {} => 校验码 {}",
+                "找到文件 {} => 校验码 {}.",
                 f.display(),
                 result_into_ok_or_err(try_crc32(&prob.existing_files[0]))
             );
@@ -115,6 +117,72 @@ fn main() {
             for file in prob.existing_files.iter() {
                 println!("    {}", file);
             }
+        }
+    }
+
+    if let Ok(f) = if let Some(d) = std::env::args().nth(1) {
+        File::open(Path::new(&d).join("checker.hash.csv"))
+    } else {
+        File::open("checker.hash.csv")
+    } {
+        println!("{}", "正在加载比对校验文件.".yellow());
+        let mut map = std::collections::HashMap::<String, Vec<(String, String)>>::new();
+
+        let mut rdr = csv::ReaderBuilder::new().has_headers(false).from_reader(f);
+        for result in rdr.records() {
+            // exam_id,problem,hash,room_id,seat_id
+            let record = result.expect("无法解析 CSV 文件");
+            let student_id = &record[0];
+            let problem = &record[1];
+            let hash = &record[2];
+            let _room_id = &record[3];
+            let _seat_id = &record[4];
+
+            if !map.contains_key(student_id) {
+                map.insert(student_id.to_string(), Vec::new());
+            }
+            map.get_mut(student_id)
+                .unwrap()
+                .push((problem.to_string(), hash.to_string()));
+        }
+
+        let student_id_found = Path::new(&user_directory)
+            .strip_prefix(&cfg.root_path)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        if let Some(s) = map.get(student_id_found) {
+            for (p, h) in s.iter() {
+                let file = &cfg
+                    .problems
+                    .iter()
+                    .find(|prob| prob.name == *p)
+                    .unwrap()
+                    .existing_files
+                    .first();
+                let real_hash = if let Some(f) = file {
+                    result_into_ok_or_err(try_crc32(f))
+                } else {
+                    "文件不存在".to_string()
+                };
+                if real_hash != *h {
+                    println!(
+                        "{}",
+                        format!(
+                            "题目 {} 校验值不匹配: found {}, expected {}.",
+                            p, real_hash, h
+                        )
+                        .on_red()
+                    );
+                } else {
+                    println!("{}", format!("题目 {} 校验通过: {}.", p, h).on_green());
+                }
+            }
+        } else {
+            println!(
+                "{}",
+                format!("未找到校验目录的匹配项: {}", student_id_found).on_yellow()
+            );
         }
     }
 
