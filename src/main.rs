@@ -1,12 +1,11 @@
 mod config;
 
 use colored::Colorize;
-use config::{Contestant, Problem};
-use std::fmt::format;
+use config::Contestant;
 use std::fs::{read_dir, File};
 use std::io::Read;
 use std::path::Path;
-use std::result;
+use windows::Win32::System::Console;
 
 fn quit(reason: &str, code: i32) -> ! {
     eprintln!("{}", reason);
@@ -32,6 +31,37 @@ fn result_into_ok_or_err<T>(r: Result<T, T>) -> T {
 }
 
 fn main() {
+    #[cfg(win32)]
+    unsafe {
+        // enable UTF-8 support
+        let h_console = Console::GetStdHandle(Console::STD_OUTPUT_HANDLE);
+        Console::SetConsoleOutputCP(windows::Win32::Globalization::CP_UTF8);
+        Console::SetConsoleCP(windows::Win32::Globalization::CP_UTF8);
+        let mut font = Console::CONSOLE_FONT_INFOEX {
+            ..Default::default()
+        };
+        font.cbSize = std::mem::size_of::<Console::CONSOLE_FONT_INFOEX>() as u32;
+        font.FontFamily = 0;
+        font.FontWeight = 400;
+        font.nFont = 0;
+        font.dwFontSize.X = 0;
+        font.dwFontSize.Y = 16;
+        font.FaceName[0..14].copy_from_slice(
+            widestring::U16CString::from_str("Lucida console")
+                .unwrap()
+                .as_slice(),
+        );
+        Console::SetCurrentConsoleFontEx(h_console, false, &font);
+        // enable color support
+        let mut mode = Console::CONSOLE_MODE(0);
+        let ptr_mode: *mut _ = &mut mode;
+        Console::GetConsoleMode(h_console, ptr_mode);
+        Console::SetConsoleMode(
+            h_console,
+            mode | Console::ENABLE_VIRTUAL_TERMINAL_PROCESSING,
+        );
+    }
+
     let cfg_file = if let Some(d) = std::env::args().nth(1) {
         File::open(Path::new(&d).join("checker.cfg.json"))
     } else {
@@ -71,6 +101,16 @@ fn main() {
 
     let valid_folder_name = valid_folders.into_iter().next().unwrap();
     let user_directory = valid_folder_name;
+    let student_id_found = Path::new(&user_directory)
+        .strip_prefix(&cfg.root_path)
+        .unwrap()
+        .to_str()
+        .unwrap();
+
+    println!(
+        "找到选手目录： {}, 请确认是否与准考证号一致.",
+        student_id_found
+    );
 
     for dir1 in read_dir(&user_directory).unwrap() {
         let dir1 = dir1.unwrap();
@@ -144,11 +184,6 @@ fn main() {
                 .push((problem.to_string(), hash.to_string()));
         }
 
-        let student_id_found = Path::new(&user_directory)
-            .strip_prefix(&cfg.root_path)
-            .unwrap()
-            .to_str()
-            .unwrap();
         if let Some(s) = map.get(student_id_found) {
             for (p, h) in s.iter() {
                 let file = &cfg

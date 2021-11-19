@@ -1,0 +1,22 @@
+{
+  "root_path": "D:\\",
+  "regex": "^GD-\\d{5}$",
+  "problems": [
+    {
+      "name": "chess",
+      "regex": "^chess\\\\chess\\.(cpp|c|pas)$"
+    },
+    {
+      "name": "number",
+      "regex": "^number\\\\number\\.(cpp|c|pas)$"
+    },
+    {
+      "name": "sequence",
+      "regex": "^sequence\\\\sequence\\.(cpp|c|pas)$"
+    },
+    {
+      "name": "variance",
+      "regex": "^variance\\\\variance\\.(cpp|c|pas)$"
+    }
+  ]
+}
