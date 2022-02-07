@@ -5,6 +5,7 @@ use config::Contestant;
 use std::fs::{read_dir, File};
 use std::io::Read;
 use std::path::Path;
+#[cfg(win32)]
 use windows::Win32::System::Console;
 
 fn quit(reason: &str, code: i32) -> ! {
@@ -16,8 +17,8 @@ fn quit(reason: &str, code: i32) -> ! {
 
 fn try_crc32<P: AsRef<Path>>(path: P) -> Result<String, String> {
     let mut f = File::open(path).map_err(|e| format!("无法读取文件内容:{}", e))?;
-    let mut s = String::new();
-    f.read_to_string(&mut s)
+    let mut s = Vec::new();
+    f.read_to_end(&mut s)
         .map_err(|e| format!("无法读取文件内容:{}", e))?;
     Ok(format!("{:x}", md5::compute(&s)))
 }

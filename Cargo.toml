@@ -1,6 +1,6 @@
 [package]
 name = "checker"
-version = "0.2.4"
+version = "0.2.5"
 authors = ["Yuhui Huang", "Yuze Fu <i@xfox.me>"]
 edition = "2018"
 publish = false
