@@ -1,6 +1,7 @@
 mod config;
 mod render;
 
+use anyhow::Result;
 use config::Contestant;
 use std::fs::{read_dir, File};
 use std::io::Read;
@@ -22,63 +23,69 @@ fn result_into_ok_or_err<T>(r: Result<T, T>) -> T {
     }
 }
 
-fn build_message() -> Vec<(String, Color)> {
-    let mut message = Vec::new();
+#[derive(thiserror::Error, Debug)]
+pub enum CSPError {
+    #[error("错误 1, checker.cfg.json 不存在, 请联系监考员.\n({0})")]
+    ConfigNotExist(#[source] std::io::Error),
+    #[error("错误 2, checker.cfg.json 无法解析, 请联系监考员.\n({0})")]
+    ConfigCannotParse(#[source] serde_json::Error),
+    #[error("错误 2，checker.cfg.json 配置的根目录或其中文件无法访问，请联系监考员.\n({0})")]
+    RootDirAccessFail(#[source] std::io::Error),
+    #[error("错误 3, 没有找到有效的选手目录. 请阅读考生须知.")]
+    NoValidContestantDir,
+    #[error("错误 4, 找到多个选手目录.\n{0}")]
+    MultipleContestantDir(String),
+    #[error("无法解析 CSV 文件")]
+    FailedToLoadCsv,
+    #[error("程序内部错误，请联系监考员.\n({0})")]
+    Unknown(
+        #[from]
+        #[source]
+        anyhow::Error,
+    ),
+}
+
+fn build_message(messages: &mut Vec<(String, Color)>) -> Result<()> {
     let cfg_file = if let Some(d) = std::env::args().nth(1) {
         File::open(Path::new(&d).join("checker.cfg.json"))
     } else {
         File::open("checker.cfg.json")
     };
-    if cfg_file.is_err() {
-        return vec![(
-            format!("错误 1, checker.cfg.json 不存在, 请联系监考员."),
-            Color::Red,
-        )];
-    }
-    let cfg = serde_json::from_reader(cfg_file.unwrap());
-    if cfg.is_err() {
-        return vec![(
-            format!("错误 2, checker.cfg.json 无法解析, 请联系监考员."),
-            Color::Red,
-        )];
-    }
-    let mut cfg: Contestant = cfg.unwrap();
+    let cfg_file = cfg_file.map_err(CSPError::ConfigNotExist)?;
+    let mut cfg: Contestant =
+        serde_json::from_reader(cfg_file).map_err(CSPError::ConfigCannotParse)?;
 
     let mut valid_folders = Vec::new();
 
-    for dir in read_dir(&cfg.root_path).unwrap() {
-        let dir = dir.unwrap();
-        if dir.file_type().unwrap().is_dir()
-            && cfg.regex.is_match(dir.file_name().to_str().unwrap())
-        {
+    for dir in read_dir(&cfg.root_path).map_err(CSPError::RootDirAccessFail)? {
+        let dir = dir.map_err(CSPError::RootDirAccessFail)?;
+        if dir.file_type()?.is_dir() && cfg.regex.is_match(dir.file_name().to_str().unwrap()) {
             valid_folders.push(dir.path());
         }
     }
 
     if valid_folders.is_empty() {
-        return vec![(
-            format!("错误 3, 没有找到有效的选手目录. 请阅读考生须知."),
-            Color::Red,
-        )];
+        Err(CSPError::NoValidContestantDir)?
     }
 
     if valid_folders.len() > 1 {
-        message.push((format!("找到多个选手目录: "), Color::Red));
-        for valid_folder in valid_folders.iter() {
-            message.push((format!("    {:?}", valid_folder), Color::Red));
-        }
-        return vec![(format!("错误 4, 找到多个选手目录."), Color::Red)];
+        Err(CSPError::MultipleContestantDir(
+            valid_folders
+                .iter()
+                .map(|f| format!("    {:?}", f))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ))?
     }
 
     let valid_folder_name = valid_folders.into_iter().next().unwrap();
     let user_directory = valid_folder_name;
     let student_id_found = Path::new(&user_directory)
-        .strip_prefix(&cfg.root_path)
-        .unwrap()
+        .strip_prefix(&cfg.root_path)?
         .to_str()
         .unwrap();
 
-    message.push((
+    messages.push((
         format!(
             "找到选手目录： {}, 请确认是否与准考证号一致.",
             student_id_found
@@ -86,24 +93,21 @@ fn build_message() -> Vec<(String, Color)> {
         Color::Yellow,
     ));
 
-    for dir1 in read_dir(&user_directory).unwrap() {
-        let dir1 = dir1.unwrap();
-        if !dir1.file_type().unwrap().is_dir() {
+    for dir1 in read_dir(&user_directory)? {
+        let dir1 = dir1?;
+        if !dir1.file_type()?.is_dir() {
             continue;
         }
-        for dir2 in read_dir(dir1.path()).unwrap() {
-            let dir2 = dir2.unwrap();
-            if !dir2.file_type().unwrap().is_file() {
+        for dir2 in read_dir(dir1.path())? {
+            let dir2 = dir2?;
+            if !dir2.file_type()?.is_file() {
                 continue;
             }
             for prob in cfg.problems.iter_mut() {
-                if prob.regex.is_match(
-                    dir2.path()
-                        .strip_prefix(&user_directory)
-                        .unwrap()
-                        .to_str()
-                        .unwrap(),
-                ) {
+                if prob
+                    .regex
+                    .is_match(dir2.path().strip_prefix(&user_directory)?.to_str().unwrap())
+                {
                     prob.existing_files
                         .push(dir2.path().to_str().unwrap().to_string());
                 }
@@ -112,25 +116,23 @@ fn build_message() -> Vec<(String, Color)> {
     }
 
     for prob in cfg.problems.iter() {
-        print!("题目 {}: ", prob.name);
+        messages.push((format!("题目 {}: ", prob.name), Color::Black));
         if prob.existing_files.is_empty() {
-            message.push((format!("未找到源代码文件."), Color::Black));
+            messages.push((format!("    未找到源代码文件."), Color::Black));
         } else if prob.existing_files.len() == 1 {
-            let f = Path::new(&prob.existing_files[0])
-                .strip_prefix(&user_directory)
-                .unwrap();
-            message.push((
+            let f = Path::new(&prob.existing_files[0]).strip_prefix(&user_directory)?;
+            messages.push((
                 format!(
-                    "找到文件 {} => 校验码 {}.",
+                    "    找到文件 {} => 校验码 {}.",
                     f.display(),
                     result_into_ok_or_err(try_crc32(&prob.existing_files[0]))
                 ),
                 Color::Black,
             ));
         } else {
-            message.push((format!("找到多个源代码文件:"), Color::Red));
+            messages.push((format!("    找到多个源代码文件:"), Color::Red));
             for file in prob.existing_files.iter() {
-                message.push((format!("    {}", file), Color::Red));
+                messages.push((format!("        {}", file), Color::Red));
             }
         }
     }
@@ -140,7 +142,7 @@ fn build_message() -> Vec<(String, Color)> {
     } else {
         File::open("checker.hash.csv")
     } {
-        message.push((format!("{}", "正在加载比对校验文件."), Color::Yellow));
+        messages.push((format!("{}", "正在加载比对校验文件."), Color::Yellow));
         let mut map = std::collections::HashMap::<String, Vec<(String, String)>>::new();
 
         let mut rdr = csv::ReaderBuilder::new().has_headers(false).from_reader(f);
@@ -148,7 +150,7 @@ fn build_message() -> Vec<(String, Color)> {
             // exam_id,problem,hash,room_id,seat_id
             let record = match result {
                 Ok(v) => v,
-                _ => return vec![(format!("无法解析 CSV 文件"), Color::Red)],
+                _ => Err(CSPError::FailedToLoadCsv)?,
             };
             let student_id = &record[0];
             let problem = &record[1];
@@ -164,55 +166,56 @@ fn build_message() -> Vec<(String, Color)> {
                 .push((problem.to_string(), hash.to_string()));
         }
 
-        if let Some(s) = map.get(student_id_found) {
-            for (p, h) in s.iter() {
-                let file = &cfg
-                    .problems
-                    .iter()
-                    .find(|prob| prob.name == *p)
-                    .unwrap()
-                    .existing_files
-                    .first();
-                let real_hash = if let Some(f) = file {
-                    result_into_ok_or_err(try_crc32(f))
-                } else {
-                    "文件不存在".to_string()
-                };
-                if real_hash != *h {
-                    message.push((
-                        format!(
-                            "{}",
-                            format!(
-                                "题目 {} 校验值不匹配: found {}, expected {}.",
-                                p, real_hash, h
-                            )
-                        ),
-                        Color::Red,
-                    ));
-                } else {
-                    message.push((
-                        format!("{}", format!("题目 {} 校验通过: {}.", p, h)),
-                        Color::Green,
-                    ));
-                }
+        for prob in cfg.problems.iter() {
+            let f = prob.existing_files.first();
+            let real_hash = if let Some(f) = f {
+                result_into_ok_or_err(try_crc32(f))
+            } else {
+                "文件不存在".to_string()
+            };
+            let submit_hash = map
+                .get(student_id_found)
+                .and_then(|m| {
+                    m.iter()
+                        .find(|(p, _)| *p == prob.name)
+                        .map(|(_, h)| h.as_str())
+                })
+                .unwrap_or("文件不存在");
+
+            if real_hash != *submit_hash {
+                messages.push((
+                    format!(
+                        "题目 {} 校验值不匹配: found {}, expected {}.",
+                        &prob.name, real_hash, submit_hash
+                    ),
+                    Color::Red,
+                ));
+            } else {
+                messages.push((
+                    format!("题目 {} 校验通过: {}.", &prob.name, submit_hash),
+                    Color::Green,
+                ));
             }
-        } else {
-            message.push((
-                format!(
-                    "{}",
-                    format!("未找到校验目录的匹配项: {}", student_id_found)
-                ),
-                Color::Yellow,
-            ));
         }
+    } else {
+        messages.push((
+            format!(
+                "{}",
+                format!("未找到校验目录的匹配项: {}", student_id_found)
+            ),
+            Color::Yellow,
+        ));
     }
 
-    message
+    Ok(())
 }
 
 pub fn main() {
-    let message = build_message();
-    render::render(&message).unwrap();
+    let mut messages = Vec::new();
+    if let Err(e) = build_message(&mut messages) {
+        messages.push((format!("{}", e), Color::Red));
+    }
+    render::render(&messages).unwrap();
 }
 
 #[derive(Debug)]
