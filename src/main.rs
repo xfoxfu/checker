@@ -1,19 +1,10 @@
 mod config;
+mod render;
 
-use colored::Colorize;
 use config::Contestant;
 use std::fs::{read_dir, File};
 use std::io::Read;
 use std::path::Path;
-#[cfg(win32)]
-use windows::Win32::System::Console;
-
-fn quit(reason: &str, code: i32) -> ! {
-    eprintln!("{}", reason);
-    eprintln!("按下 Enter 键退出...");
-    std::io::stdin().read_line(&mut String::new()).unwrap();
-    std::process::exit(code)
-}
 
 fn try_crc32<P: AsRef<Path>>(path: P) -> Result<String, String> {
     let mut f = File::open(path).map_err(|e| format!("无法读取文件内容:{}", e))?;
@@ -31,49 +22,25 @@ fn result_into_ok_or_err<T>(r: Result<T, T>) -> T {
     }
 }
 
-fn main() {
-    #[cfg(win32)]
-    unsafe {
-        // enable UTF-8 support
-        let h_console = Console::GetStdHandle(Console::STD_OUTPUT_HANDLE);
-        Console::SetConsoleOutputCP(windows::Win32::Globalization::CP_UTF8);
-        Console::SetConsoleCP(windows::Win32::Globalization::CP_UTF8);
-        let mut font = Console::CONSOLE_FONT_INFOEX {
-            ..Default::default()
-        };
-        font.cbSize = std::mem::size_of::<Console::CONSOLE_FONT_INFOEX>() as u32;
-        font.FontFamily = 0;
-        font.FontWeight = 400;
-        font.nFont = 0;
-        font.dwFontSize.X = 0;
-        font.dwFontSize.Y = 16;
-        font.FaceName[0..14].copy_from_slice(
-            widestring::U16CString::from_str("Lucida console")
-                .unwrap()
-                .as_slice(),
-        );
-        Console::SetCurrentConsoleFontEx(h_console, false, &font);
-        // enable color support
-        let mut mode = Console::CONSOLE_MODE(0);
-        let ptr_mode: *mut _ = &mut mode;
-        Console::GetConsoleMode(h_console, ptr_mode);
-        Console::SetConsoleMode(
-            h_console,
-            mode | Console::ENABLE_VIRTUAL_TERMINAL_PROCESSING,
-        );
-    }
-
+fn build_message() -> Vec<(String, Color)> {
+    let mut message = Vec::new();
     let cfg_file = if let Some(d) = std::env::args().nth(1) {
         File::open(Path::new(&d).join("checker.cfg.json"))
     } else {
         File::open("checker.cfg.json")
     };
     if cfg_file.is_err() {
-        quit("错误 1, checker.cfg.json 不存在, 请联系监考员.", 1);
+        return vec![(
+            format!("错误 1, checker.cfg.json 不存在, 请联系监考员."),
+            Color::Red,
+        )];
     }
     let cfg = serde_json::from_reader(cfg_file.unwrap());
     if cfg.is_err() {
-        quit("错误 2, checker.cfg.json 无法解析, 请联系监考员.", 2);
+        return vec![(
+            format!("错误 2, checker.cfg.json 无法解析, 请联系监考员."),
+            Color::Red,
+        )];
     }
     let mut cfg: Contestant = cfg.unwrap();
 
@@ -89,15 +56,18 @@ fn main() {
     }
 
     if valid_folders.is_empty() {
-        quit("错误 3, 没有找到有效的选手目录. 请阅读考生须知.", 3);
+        return vec![(
+            format!("错误 3, 没有找到有效的选手目录. 请阅读考生须知."),
+            Color::Red,
+        )];
     }
 
     if valid_folders.len() > 1 {
-        eprintln!("找到多个选手目录: ");
+        message.push((format!("找到多个选手目录: "), Color::Red));
         for valid_folder in valid_folders.iter() {
-            eprintln!("    {:?}", valid_folder);
+            message.push((format!("    {:?}", valid_folder), Color::Red));
         }
-        quit("错误 4, 找到多个选手目录.", 4);
+        return vec![(format!("错误 4, 找到多个选手目录."), Color::Red)];
     }
 
     let valid_folder_name = valid_folders.into_iter().next().unwrap();
@@ -108,10 +78,13 @@ fn main() {
         .to_str()
         .unwrap();
 
-    println!(
-        "找到选手目录： {}, 请确认是否与准考证号一致.",
-        student_id_found
-    );
+    message.push((
+        format!(
+            "找到选手目录： {}, 请确认是否与准考证号一致.",
+            student_id_found
+        ),
+        Color::Yellow,
+    ));
 
     for dir1 in read_dir(&user_directory).unwrap() {
         let dir1 = dir1.unwrap();
@@ -141,20 +114,23 @@ fn main() {
     for prob in cfg.problems.iter() {
         print!("题目 {}: ", prob.name);
         if prob.existing_files.is_empty() {
-            println!("未找到源代码文件.");
+            message.push((format!("未找到源代码文件."), Color::Black));
         } else if prob.existing_files.len() == 1 {
             let f = Path::new(&prob.existing_files[0])
                 .strip_prefix(&user_directory)
                 .unwrap();
-            println!(
-                "找到文件 {} => 校验码 {}.",
-                f.display(),
-                result_into_ok_or_err(try_crc32(&prob.existing_files[0]))
-            );
+            message.push((
+                format!(
+                    "找到文件 {} => 校验码 {}.",
+                    f.display(),
+                    result_into_ok_or_err(try_crc32(&prob.existing_files[0]))
+                ),
+                Color::Black,
+            ));
         } else {
-            println!("找到多个源代码文件:");
+            message.push((format!("找到多个源代码文件:"), Color::Red));
             for file in prob.existing_files.iter() {
-                println!("    {}", file);
+                message.push((format!("    {}", file), Color::Red));
             }
         }
     }
@@ -164,13 +140,16 @@ fn main() {
     } else {
         File::open("checker.hash.csv")
     } {
-        println!("{}", "正在加载比对校验文件.".yellow());
+        message.push((format!("{}", "正在加载比对校验文件."), Color::Yellow));
         let mut map = std::collections::HashMap::<String, Vec<(String, String)>>::new();
 
         let mut rdr = csv::ReaderBuilder::new().has_headers(false).from_reader(f);
         for result in rdr.records() {
             // exam_id,problem,hash,room_id,seat_id
-            let record = result.expect("无法解析 CSV 文件");
+            let record = match result {
+                Ok(v) => v,
+                _ => return vec![(format!("无法解析 CSV 文件"), Color::Red)],
+            };
             let student_id = &record[0];
             let problem = &record[1];
             let hash = &record[2];
@@ -200,25 +179,46 @@ fn main() {
                     "文件不存在".to_string()
                 };
                 if real_hash != *h {
-                    println!(
-                        "{}",
+                    message.push((
                         format!(
-                            "题目 {} 校验值不匹配: found {}, expected {}.",
-                            p, real_hash, h
-                        )
-                        .on_red()
-                    );
+                            "{}",
+                            format!(
+                                "题目 {} 校验值不匹配: found {}, expected {}.",
+                                p, real_hash, h
+                            )
+                        ),
+                        Color::Red,
+                    ));
                 } else {
-                    println!("{}", format!("题目 {} 校验通过: {}.", p, h).on_green());
+                    message.push((
+                        format!("{}", format!("题目 {} 校验通过: {}.", p, h)),
+                        Color::Green,
+                    ));
                 }
             }
         } else {
-            println!(
-                "{}",
-                format!("未找到校验目录的匹配项: {}", student_id_found).on_yellow()
-            );
+            message.push((
+                format!(
+                    "{}",
+                    format!("未找到校验目录的匹配项: {}", student_id_found)
+                ),
+                Color::Yellow,
+            ));
         }
     }
 
-    quit("", 0);
+    message
+}
+
+pub fn main() {
+    let message = build_message();
+    render::render(&message).unwrap();
+}
+
+#[derive(Debug)]
+pub(crate) enum Color {
+    Red,
+    Yellow,
+    Green,
+    Black,
 }
