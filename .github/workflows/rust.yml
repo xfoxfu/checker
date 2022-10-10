@@ -1,0 +1,42 @@
+name: Rust
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install vcpkg
+        run: cargo install cargo-vcpkg
+      - name: Build
+        run: |
+          cargo vcpkg --verbose build
+          cargo build --verbose --release
+        env:
+          VCPKG_ROOT: |-
+            ${{ github.workspace }}${{
+            runner.os == 'Windows' && '\\target\\vcpkg' || '/target/vcpkg' }}
+      - name: Run tests
+        run: cargo test --verbose --release
+      - name: Upload Binary
+        uses: actions/upload-artifact@v3.1.0
+        with:
+          name: checker-${{ matrix.os }}
+          path: |-
+            ${{ runner.os == 'Windows' && 'target\\release\\checker.exe'
+            || 'target/release/checker' }}
+          retention-days: 30
