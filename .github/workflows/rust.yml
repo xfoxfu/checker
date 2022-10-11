@@ -30,6 +30,7 @@ jobs:
           VCPKG_ROOT: |-
             ${{ github.workspace }}${{
             runner.os == 'Windows' && '\\target\\vcpkg' || '/target/vcpkg' }}
+          MACOSX_DEPLOYMENT_TARGET: 11.0
       - name: Run tests
         run: cargo test --verbose --release
       - name: Upload Binary
