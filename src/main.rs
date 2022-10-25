@@ -157,8 +157,6 @@ fn build_message(messages: &mut Vec<(String, Color)>) -> Result<()> {
             let student_id = &record[0];
             let problem = &record[1];
             let hash = &record[2];
-            let _room_id = &record[3];
-            let _seat_id = &record[4];
 
             if !map.contains_key(student_id) {
                 map.insert(student_id.to_string(), Vec::new());
