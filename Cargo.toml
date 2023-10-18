@@ -27,3 +27,4 @@ rev = "9edb1b8e590cc086563301d735cae4b6e732d2d2"
 
 [package.metadata.vcpkg.target]
 x86_64-pc-windows-msvc = { triplet = "x64-windows-static" }
+i686-pc-windows-msvc = { triplet = "i686-windows-static" }
