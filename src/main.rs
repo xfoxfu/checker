@@ -218,14 +218,6 @@ fn build_message(messages: &mut Vec<(String, Color)>) -> Result<()> {
                 ));
             }
         }
-    } else {
-        messages.push((
-            format!(
-                "{}",
-                format!("未找到校验目录的匹配项: {}", student_id_found)
-            ),
-            Color::Yellow,
-        ));
     }
 
     Ok(())
