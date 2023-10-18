@@ -110,8 +110,13 @@ fn build_message(messages: &mut Vec<(String, Color)>) -> Result<()> {
                     .regex
                     .is_match(dir2.path().strip_prefix(&user_directory)?.to_str().unwrap())
                 {
-                    prob.existing_files
-                        .push(dir2.path().to_str().unwrap().to_string());
+                    let filepath = dir2.path().to_str().unwrap().to_string();
+                    prob.existing_files.push(filepath.clone());
+                    if let Ok(meta) = dir2.metadata() {
+                        if let Ok(modi) = meta.modified() {
+                            prob.existing_files_date.insert(filepath, modi.into());
+                        }
+                    }
                 }
             }
         }
@@ -122,15 +127,31 @@ fn build_message(messages: &mut Vec<(String, Color)>) -> Result<()> {
         if prob.existing_files.is_empty() {
             messages.push((format!("    未找到源代码文件."), Color::Black));
         } else if prob.existing_files.len() == 1 {
-            let f = Path::new(&prob.existing_files[0]).strip_prefix(&user_directory)?;
+            let filename = &prob.existing_files[0];
+            let f = Path::new(filename).strip_prefix(&user_directory)?;
             messages.push((
                 format!(
                     "    找到文件 {} => 校验码 {}.",
                     f.display(),
-                    result_into_ok_or_err(try_crc32(&prob.existing_files[0]))
+                    result_into_ok_or_err(try_crc32(filename))
                 ),
                 Color::Black,
             ));
+            if let Some(mod_date) = &prob.existing_files_date.get(filename) {
+                if mod_date >= &&cfg.start_time && mod_date <= &&cfg.end_time {
+                    messages.push((
+                        format!("             修改日期有效 {}.", mod_date),
+                        Color::Black,
+                    ));
+                } else {
+                    messages.push((
+                        format!("             修改日期不在考试时间范围内 {}.", mod_date),
+                        Color::Red,
+                    ));
+                }
+            } else {
+                messages.push((format!("             文件没有修改日期记录."), Color::Yellow));
+            }
         } else {
             messages.push((format!("    找到多个源代码文件:"), Color::Red));
             for file in prob.existing_files.iter() {

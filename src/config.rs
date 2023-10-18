@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+
+use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +12,8 @@ pub struct Problem {
     pub regex: Regex,
     #[serde(default)]
     pub existing_files: Vec<String>,
+    #[serde(default)]
+    pub existing_files_date: HashMap<String, DateTime<Utc>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -19,6 +24,10 @@ pub struct Contestant {
     pub regex: Regex,
     /// 所有题目的配置项
     pub problems: Vec<Problem>,
+    /// 考试开始时间
+    pub start_time: DateTime<Utc>,
+    /// 考试结束时间
+    pub end_time: DateTime<Utc>,
 }
 
 mod regex_sd {
