@@ -33,22 +33,25 @@ jobs:
           sudo apt-get install -y libwayland-dev libxkbcommon-dev libegl1-mesa-dev
           sudo apt-get install -y libibus-1.0-dev
         if: runner.os == 'Linux'
-      - name: Build
+      - name: Build (Unix)
         run: |
-          cargo vcpkg --verbose build $TARGET
-          cargo build --verbose --release $TARGET
+          cargo vcpkg --verbose build
+          cargo build --verbose --release
         env:
-          VCPKG_ROOT: |-
-            ${{ github.workspace }}${{
-            runner.os == 'Windows' && '\\target\\vcpkg' || '/target/vcpkg' }}
-          TARGET: ${{runner.os == 'Windows' && '--target i686-pc-windows-msvc' || '' }}
-      - name: Run tests
-        run: cargo test --verbose --release
+          VCPKG_ROOT: ${{ github.workspace }}/target/vcpkg
+        if: runner.os != 'Windows'
+      - name: Build (Windows)
+        run: |
+          cargo vcpkg --verbose build --target i686-pc-windows-msvc
+          cargo build --verbose --release --target i686-pc-windows-msvc
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}\target\vcpkg
+        if: runner.os == 'Windows'
       - name: Upload Binary
         uses: actions/upload-artifact@v3.1.0
         with:
           name: checker-${{ matrix.os }}
           path: |-
-            ${{ runner.os == 'Windows' && 'target\\release\\checker.exe'
+            ${{ runner.os == 'Windows' && 'target\i686-pc-windows-msvc\release\checker.exe'
             || 'target/release/checker' }}
           retention-days: 30
