@@ -29,13 +29,13 @@ jobs:
         run: cargo install cargo-vcpkg
       - name: Build
         run: |
-          cargo vcpkg --verbose build  --target i686-pc-windows-msvc
-          cargo build --verbose --release --target i686-pc-windows-msvc
+          cargo vcpkg --verbose build $TARGET
+          cargo build --verbose --release $TARGET
         env:
           VCPKG_ROOT: |-
             ${{ github.workspace }}${{
             runner.os == 'Windows' && '\\target\\vcpkg' || '/target/vcpkg' }}
-          MACOSX_DEPLOYMENT_TARGET: 11.0
+          TARGET: ${{runner.os == 'Windows' && '--target i686-pc-windows-msvc' || '' }}
       - name: Run tests
         run: cargo test --verbose --release
       - name: Upload Binary
