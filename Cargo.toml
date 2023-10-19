@@ -18,7 +18,7 @@ chrono = { version = "0.4.31", features = ["serde"] }
 [dependencies.sdl2]
 version = "0.35.2"
 default-features = false
-features = ["ttf", "static-link", "use-vcpkg"]
+features = ["ttf", "image", "static-link", "use-vcpkg"]
 
 [package.metadata.vcpkg]
 dependencies = ["sdl2", "sdl2-ttf"]
