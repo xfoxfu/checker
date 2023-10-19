@@ -27,15 +27,21 @@ jobs:
           key: ${{ runner.os }}-target
       - name: Install vcpkg
         run: cargo install cargo-vcpkg
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get install -y libx11-dev libxft-dev libxext-dev
+          sudo apt-get install -y libwayland-dev libxkbcommon-dev libegl1-mesa-dev
+          sudo apt-get install -y libibus-1.0-dev
+        if: runner.os == 'Linux'
       - name: Build
         run: |
-          cargo vcpkg --verbose build  --target i686-pc-windows-msvc
-          cargo build --verbose --release --target i686-pc-windows-msvc
+          cargo vcpkg --verbose build $TARGET
+          cargo build --verbose --release $TARGET
         env:
           VCPKG_ROOT: |-
             ${{ github.workspace }}${{
             runner.os == 'Windows' && '\\target\\vcpkg' || '/target/vcpkg' }}
-          MACOSX_DEPLOYMENT_TARGET: 11.0
+          TARGET: ${{runner.os == 'Windows' && '--target i686-pc-windows-msvc' || '' }}
       - name: Run tests
         run: cargo test --verbose --release
       - name: Upload Binary
