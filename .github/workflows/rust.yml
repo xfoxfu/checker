@@ -27,6 +27,12 @@ jobs:
           key: ${{ runner.os }}-target
       - name: Install vcpkg
         run: cargo install cargo-vcpkg
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get install -y libx11-dev libxft-dev libxext-dev
+          sudo apt-get install -y libwayland-dev libxkbcommon-dev libegl1-mesa-dev
+          sudo apt-get install -y libibus-1.0-dev
+        if: runner.os == 'Linux'
       - name: Build
         run: |
           cargo vcpkg --verbose build $TARGET
