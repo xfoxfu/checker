@@ -4,6 +4,7 @@ mod config;
 mod render;
 
 use anyhow::Result;
+use chrono::{FixedOffset, Offset};
 use config::Contestant;
 use std::fs::{read_dir, File};
 use std::io::Read;
@@ -138,14 +139,16 @@ fn build_message(messages: &mut Vec<(String, Color)>) -> Result<()> {
                 Color::Black,
             ));
             if let Some(mod_date) = &prob.existing_files_date.get(filename) {
+                let date_shanghai =
+                    mod_date.with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap());
                 if mod_date >= &&cfg.start_time && mod_date <= &&cfg.end_time {
                     messages.push((
-                        format!("             修改日期有效 {}.", mod_date),
+                        format!("             修改日期有效 {}.", date_shanghai),
                         Color::Black,
                     ));
                 } else {
                     messages.push((
-                        format!("             修改日期不在考试时间范围内 {}.", mod_date),
+                        format!("             修改日期不在考试时间范围内 {}.", date_shanghai),
                         Color::Red,
                     ));
                 }
