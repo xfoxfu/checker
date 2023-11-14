@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::fs::{DirEntry, FileType, Metadata};
+use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use regex::Regex;
@@ -10,12 +11,26 @@ pub struct Problem {
     pub name: String,
     #[serde(with = "regex_sd")]
     pub regex: Regex,
-    #[serde(default)]
-    pub existing_files: Vec<String>,
-    #[serde(default)]
-    pub existing_files_date: HashMap<String, DateTime<Utc>>,
+    #[serde(skip)]
+    pub existing_files: Vec<FileEntry>,
 }
 
+#[derive(Debug)]
+pub struct FileEntry {
+    pub path: PathBuf,
+    pub file_type: FileType,
+    pub metadata: Metadata,
+}
+
+impl FileEntry {
+    pub fn from(entry: &DirEntry) -> Result<Self, std::io::Error> {
+        Ok(Self {
+            path: entry.path(),
+            file_type: entry.file_type()?,
+            metadata: entry.metadata()?,
+        })
+    }
+}
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Contestant {
     /// 选手文件夹父路径
@@ -28,6 +43,8 @@ pub struct Contestant {
     pub start_time: DateTime<Utc>,
     /// 考试结束时间
     pub end_time: DateTime<Utc>,
+    /// 文件大小限制
+    pub size_limit_kb: u64,
 }
 
 mod regex_sd {
@@ -48,7 +65,7 @@ mod regex_sd {
     {
         let s = String::deserialize(deserializer)?;
         #[cfg(unix)]
-        let s = s.replace(r#"\\"#, "/");
+        let s = s.replace(r"\\", "/");
         Regex::from_str(&s).map_err(serde::de::Error::custom)
     }
 }

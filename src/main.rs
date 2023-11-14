@@ -4,8 +4,8 @@ mod config;
 mod render;
 
 use anyhow::Result;
-use chrono::{FixedOffset, Offset};
-use config::Contestant;
+use chrono::{DateTime, FixedOffset, Utc};
+use config::{Contestant, FileEntry};
 use std::fs::{read_dir, File};
 use std::io::Read;
 use std::path::Path;
@@ -111,13 +111,7 @@ fn build_message(messages: &mut Vec<(String, Color)>) -> Result<()> {
                     .regex
                     .is_match(dir2.path().strip_prefix(&user_directory)?.to_str().unwrap())
                 {
-                    let filepath = dir2.path().to_str().unwrap().to_string();
-                    prob.existing_files.push(filepath.clone());
-                    if let Ok(meta) = dir2.metadata() {
-                        if let Ok(modi) = meta.modified() {
-                            prob.existing_files_date.insert(filepath, modi.into());
-                        }
-                    }
+                    prob.existing_files.push(FileEntry::from(&dir2)?);
                 }
             }
         }
@@ -128,7 +122,8 @@ fn build_message(messages: &mut Vec<(String, Color)>) -> Result<()> {
         if prob.existing_files.is_empty() {
             messages.push((format!("    未找到源代码文件."), Color::Black));
         } else if prob.existing_files.len() == 1 {
-            let filename = &prob.existing_files[0];
+            let file_entry = &prob.existing_files[0];
+            let filename = file_entry.path.to_str().unwrap_or("");
             let f = Path::new(filename).strip_prefix(&user_directory)?;
             messages.push((
                 format!(
@@ -138,10 +133,11 @@ fn build_message(messages: &mut Vec<(String, Color)>) -> Result<()> {
                 ),
                 Color::Black,
             ));
-            if let Some(mod_date) = &prob.existing_files_date.get(filename) {
+            if let Ok(mod_date) = file_entry.metadata.modified() {
+                let mod_date: DateTime<Utc> = mod_date.into();
                 let date_shanghai =
                     mod_date.with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap());
-                if mod_date >= &&cfg.start_time && mod_date <= &&cfg.end_time {
+                if mod_date >= cfg.start_time && mod_date <= cfg.end_time {
                     messages.push((
                         format!("             修改日期有效 {}.", date_shanghai),
                         Color::Black,
@@ -155,10 +151,17 @@ fn build_message(messages: &mut Vec<(String, Color)>) -> Result<()> {
             } else {
                 messages.push((format!("             文件没有修改日期记录."), Color::Yellow));
             }
+            let size = file_entry.metadata.len();
+            if size > cfg.size_limit_kb * 1024 {
+                messages.push((
+                    format!("             文件大小 {}KiB 超出限制.", size / 1024),
+                    Color::Red,
+                ));
+            }
         } else {
             messages.push((format!("    找到多个源代码文件:"), Color::Red));
             for file in prob.existing_files.iter() {
-                messages.push((format!("        {}", file), Color::Red));
+                messages.push((format!("        {}", file.path.display()), Color::Red));
             }
         }
     }
@@ -193,7 +196,7 @@ fn build_message(messages: &mut Vec<(String, Color)>) -> Result<()> {
         for prob in cfg.problems.iter() {
             let f = prob.existing_files.first();
             let real_hash = if let Some(f) = f {
-                result_into_ok_or_err(try_crc32(f))
+                result_into_ok_or_err(try_crc32(&f.path))
             } else {
                 "文件不存在".to_string()
             };
